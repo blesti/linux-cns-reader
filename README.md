@@ -7,7 +7,7 @@ sudo apt install pcscd pcsc-tools libccid opensc opensc-pkcs11 libnss3-tools
 # Abilita il lettore
 sudo systemctl enable --now pcscd.socket
 
-# nserisci lettore + Tessera Sanitaria e verifica (ovresti vedere il lettore e la carta. Per uscire fai Ctrl+C.)
+# Inserisci lettore + Tessera Sanitaria e verifica (ovresti vedere il lettore e la carta. Per uscire fai Ctrl+C.)
 pcsc_scan
 
 opensc-tool -n
