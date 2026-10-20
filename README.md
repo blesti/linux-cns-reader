@@ -29,7 +29,7 @@ opensc-tool -n
 pkcs11-tool --module /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so --list-objects --type cert
 ```
 
-## Per Chrome — questo è il passaggio che su Laura era stato fondamentale Questo va fatto dall'utente che utilizzerà Chrome, non da amministratore/root. Chiudi prima chrome e poi digita
+## Per Chrome — questo è il passaggio dall'utente che utilizzerà Chrome per utilizzo CNS, non da amministratore/root. Chiudi prima chrome e poi digita
 
 ```bash
 rm -rf ~/.pki/nssdb
