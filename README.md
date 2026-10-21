@@ -33,7 +33,7 @@ sudo apt install pcscd pcsc-tools libccid libacsccid1 opensc opensc-pkcs11 libns
 sudo systemctl enable --now pcscd.socket
 ```
 
-Se necessario:
+Se necessario, un amministratore può riavviare il servizio con:
 
 ```bash
 sudo systemctl restart pcscd
@@ -127,13 +127,14 @@ modutil -dbdir sql:$HOME/.pki/nssdb -list
 
 Con la CNS inserita dovrebbero essere visibili il modulo OpenSC e, quando correttamente riconosciuti, il lettore/token.
 
-A questo punto riavvia:
+A questo punto:
 
-```bash
-sudo systemctl restart pcscd
-```
+1. sfila la CNS;
+2. reinseriscila;
+3. apri Chrome;
+4. prova l'accesso al servizio desiderato.
 
-Sfila e reinserisci la CNS, apri Chrome e prova l'accesso al servizio desiderato.
+Se compare la richiesta del PIN, la configurazione è funzionante.
 
 ---
 
@@ -212,13 +213,14 @@ OpenSC smartcard framework
 CNS_Bit4id
 ```
 
-Riavvia quindi `pcscd`:
+A questo punto:
 
-```bash
-sudo systemctl restart pcscd
-```
+1. sfila la CNS;
+2. reinseriscila;
+3. riapri Chrome;
+4. prova nuovamente l'accesso.
 
-Sfila e reinserisci la CNS, quindi riapri Chrome e prova nuovamente l'accesso.
+Non è normalmente necessario riavviare `pcscd` dopo aver utilizzato `modutil`.
 
 ---
 
@@ -313,13 +315,26 @@ Esempio:
 modutil -dbdir sql:$HOME/.pki/nssdb -add "CNS_Bit4id" -libfile /nuovo/percorso/libbit4xpki.so
 ```
 
-Riavviare quindi:
+Sfilare e reinserire la CNS, quindi riaprire Chrome e riprovare.
+
+---
+
+## Se la CNS continua a non essere rilevata
+
+Se lettore e CNS continuano a non essere rilevati correttamente, come ulteriore tentativo un utente con privilegi amministrativi può riavviare il servizio smart card:
 
 ```bash
 sudo systemctl restart pcscd
 ```
 
-Sfilare e reinserire la CNS e riaprire Chrome.
+Quindi:
+
+1. sfilare la CNS;
+2. reinserirla;
+3. chiudere e riaprire Chrome;
+4. riprovare l'accesso.
+
+> Il riavvio di `pcscd` non è normalmente necessario dopo `modutil`: viene indicato soltanto come operazione di diagnostica in caso di problemi.
 
 ---
 
@@ -337,4 +352,14 @@ Non deve quindi essere utilizzata come normale passaggio di installazione.
 
 Usarla soltanto se si vuole deliberatamente ricreare da zero la configurazione NSS dell'utente.
 
-Dopo aver cancellato il database sarà necessario ricrearlo e registrare nuovamente i moduli PKCS#11 necessari.
+Dopo aver cancellato il database sarà necessario ricrearlo:
+
+```bash
+mkdir -p ~/.pki/nssdb
+```
+
+```bash
+certutil -N --empty-password -d sql:$HOME/.pki/nssdb
+```
+
+e registrare nuovamente i moduli PKCS#11 necessari.
