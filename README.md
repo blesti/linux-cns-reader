@@ -1,19 +1,221 @@
-# linux-cns-reader (Mint)
+# linux-cns-reader (Linux Mint)
 
-Script Bash per l'installazione e la configurazione di lettori smart card CNS su Linux
+Guida per installare e configurare lettori smart card e Tessera Sanitaria/CNS su Linux Mint, con utilizzo della CNS anche tramite Google Chrome.
 
-## Installa tutto il necessario
+> **Importante:** i comandi relativi a Chrome/NSS devono essere eseguiti dall'utente che utilizzerà Chrome, non da `root` e non dall'account amministratore di un altro utente.
+
+---
+
+## 1. Installa i componenti necessari
+
 ```bash
-sudo apt install pcscd pcsc-tools libccid opensc opensc-pkcs11 libnss3-tools
+sudo apt install pcscd pcsc-tools libccid libacsccid1 opensc opensc-pkcs11 libnss3-tools
 ```
 
-## Abilita il lettore
+`libacsccid1` è utile in particolare per alcuni lettori ACS, ad esempio ACR38U.
+
+---
+
+## 2. Abilita il servizio smart card
+
 ```bash
 sudo systemctl enable --now pcscd.socket
 ```
 
-## Inserisci lettore + Tessera Sanitaria e verifica (dovresti vedere il lettore e la carta. 
-## Per uscire fai Ctrl+C.)
+Se necessario:
+
+```bash
+sudo systemctl restart pcscd
+```
+
+---
+
+## 3. Verifica lettore e Tessera Sanitaria/CNS
+
+Inserisci il lettore e la Tessera Sanitaria/CNS.
+
+```bash
+pcsc_scan
+```
+
+Dovresti vedere il lettore, la carta inserita e il relativo ATR.
+
+Per uscire:
+
+```text
+Ctrl+C
+```
+
+Poi verifica con OpenSC:
+
+```bash
+opensc-tool -n
+```
+
+Con una CNS compatibile dovrebbe comparire qualcosa come:
+
+```text
+CNS card
+```
+
+Questo conferma che lettore, pcscd e OpenSC riescono a comunicare con la carta.
+
+### Test opzionale del PIN tramite PKCS#11
+
+```bash
+pkcs11-tool --module /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so --login --test
+```
+
+Se viene richiesta l'immissione del PIN, OpenSC riesce a raggiungere correttamente l'autenticazione della carta.
+
+> Non è necessario completare il test se si vuole soltanto verificare che venga richiesta l'autenticazione.
+
+---
+
+# Configurazione per Google Chrome
+
+Chiudi completamente Chrome prima di modificare il database NSS.
+
+I comandi seguenti devono essere eseguiti **dall'utente che utilizzerà Chrome**.
+
+## 4. Verifica/crea il database NSS
+
+Chrome su Linux utilizza il database NSS dell'utente per caricare i moduli PKCS#11.
+
+Se non esiste ancora:
+
+```bash
+mkdir -p ~/.pki/nssdb
+```
+
+```bash
+certutil -N --empty-password -d sql:$HOME/.pki/nssdb
+```
+
+> Non cancellare `~/.pki/nssdb` come prima operazione: potrebbe contenere configurazioni già presenti dell'utente.
+
+---
+
+## 5. Registra OpenSC
+
+Preferire il modulo `onepin`:
+
+```bash
+modutil -dbdir sql:$HOME/.pki/nssdb -add "OpenSC smartcard framework" -libfile /usr/lib/x86_64-linux-gnu/onepin-opensc-pkcs11.so
+```
+
+Controlla:
+
+```bash
+modutil -dbdir sql:$HOME/.pki/nssdb -list
+```
+
+Con la CNS inserita dovrebbero essere visibili il modulo OpenSC e, quando correttamente riconosciuti, il lettore/token.
+
+A questo punto riavvia:
+
+```bash
+sudo systemctl restart pcscd
+```
+
+Sfila e reinserisci la CNS, apri Chrome e prova l'accesso al servizio desiderato.
+
+---
+
+# Se Chrome non chiede il PIN
+
+È possibile che:
+
+- `pcsc_scan` riconosca correttamente lettore e carta;
+- `opensc-tool -n` riconosca la carta come `CNS card`;
+- OpenSC riesca anche ad arrivare alla richiesta del PIN;
+- ma Chrome non presenti comunque la finestra per il PIN.
+
+Questa situazione è stata riscontrata con alcune CNS/lettori.
+
+In questo caso può essere necessario utilizzare il middleware **Bit4id** oltre a OpenSC.
+
+## 6. Installazione tramite InfoCert Sign
+
+InfoCert Sign per Linux contiene la libreria PKCS#11 Bit4id.
+
+Dopo aver installato InfoCert Sign, verificare la presenza della libreria:
+
+```bash
+find /opt /usr -type f -iname 'libbit4*pki.so*' 2>/dev/null
+```
+
+Con una versione recente di InfoCert Sign è stata trovata in:
+
+```text
+/opt/infocert-sign-desktop/resources/app.asar.unpacked/node_modules/@ice/dike-core-linux/native/lib/libbit4xpki.so
+```
+
+Chiudi completamente Chrome.
+
+Registra quindi Bit4id nel database NSS dell'utente:
+
+```bash
+modutil -dbdir sql:$HOME/.pki/nssdb -add "CNS_Bit4id" -libfile /opt/infocert-sign-desktop/resources/app.asar.unpacked/node_modules/@ice/dike-core-linux/native/lib/libbit4xpki.so
+```
+
+Controlla:
+
+```bash
+modutil -dbdir sql:$HOME/.pki/nssdb -list
+```
+
+È possibile lasciare registrati contemporaneamente **OpenSC e CNS_Bit4id**.
+
+Riavvia poi pcscd:
+
+```bash
+sudo systemctl restart pcscd
+```
+
+Sfila e reinserisci la CNS, quindi riapri Chrome e prova nuovamente l'accesso.
+
+---
+
+# Esperienza pratica
+
+Sono state riscontrate configurazioni nelle quali **OpenSC da solo è sufficiente** e altre nelle quali Chrome non arriva alla richiesta del PIN nonostante la CNS sia correttamente riconosciuta dal sistema.
+
+Su una postazione con:
+
+- Linux Mint
+- Google Chrome
+- lettore ACS ACR38U
+- Tessera Sanitaria riconosciuta da OpenSC come `CNS card`
+
+OpenSC riconosceva correttamente lettore e carta e il test PKCS#11 arrivava alla richiesta del PIN, ma Chrome non richiedeva il PIN durante l'accesso CNS all'Agenzia delle Entrate.
+
+L'aggiunta del modulo:
+
+```text
+CNS_Bit4id
+```
+
+tramite `libbit4xpki.so` fornita da InfoCert Sign ha risolto il problema.
+
+**Conclusione:** non installare necessariamente Bit4id su tutte le postazioni. Provare prima OpenSC; se la CNS viene riconosciuta ma Chrome non arriva alla richiesta del PIN, provare Bit4id.
+
+---
+
+# Note diagnostiche
+
+Il comando:
+
+```bash
+pkcs11-tool --module /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so --list-objects --type cert
+```
+
+può non mostrare certificati anche su una postazione dove la CNS funziona perfettamente.
+
+**Non utilizzare quindi l'assenza di certificati nell'output di questo comando come prova che la CNS non funzioni.**
+
+Per una diagnosi iniziale sono molto più utili:
+
 ```bash
 pcsc_scan
 ```
@@ -22,30 +224,24 @@ pcsc_scan
 opensc-tool -n
 ```
 
-## Dovrebbe riconoscerla come "CNS card"
+e, se necessario:
 
-## Verifica che OpenSC veda il certificato
 ```bash
-pkcs11-tool --module /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so --list-objects --type cert
+pkcs11-tool --module /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so --login --test
 ```
 
-## Per Chrome — questo è il passaggio dall'utente che utilizzerà Chrome per utilizzo CNS, non da amministratore/root. Chiudi prima chrome e poi digita
+---
+
+## Ripristino NSS — solo in caso di problemi
+
+La cancellazione:
 
 ```bash
 rm -rf ~/.pki/nssdb
 ```
-```bash
-mkdir -p ~/.pki/nssdb && certutil -N --empty-password -d sql:$HOME/.pki/nssdb
-```
 
-## Poi registriamo OpenSC:
-```bash
-modutil -dbdir sql:$HOME/.pki/nssdb -add "OpenSC" -libfile /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so
-```
+**azzera il database NSS dell'utente**.
 
-## Infine controlliamo:
-```bash
-modutil -dbdir sql:$HOME/.pki/nssdb -list
-```
+Non deve quindi essere utilizzata come normale passaggio di installazione.
 
-Lì dovremmo vedere OpenSC, il lettore e, con la TS-CNS inserita, il token della carta. Chrome su Linux utilizza il database NSS per il modulo PKCS#11, quindi questo è il pezzo necessario per arrivare alla richiesta del PIN. CAC Help. Nota importante: il comando rm -rf ~/.pki/nssdb azzera il database NSS dell'utente
+Usarla soltanto se si vuole deliberatamente ricreare da zero la configurazione NSS dell'utente.
