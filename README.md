@@ -6,6 +6,17 @@ Guida per installare e configurare lettori smart card e Tessera Sanitaria/CNS su
 
 ---
 
+## PC con più utenti
+
+Su un PC utilizzato da più persone è importante distinguere la configurazione di sistema da quella del singolo utente.
+
+- I passi **1–2** (installazione pacchetti e attivazione `pcscd`) si eseguono **una sola volta**, utilizzando un account amministratore tramite `sudo`.
+- I passi relativi a **NSS/Chrome e ai moduli PKCS#11** devono invece essere eseguiti **separatamente per ogni utente che utilizzerà la CNS con Chrome**, accedendo con quell'utente.
+
+> Non configurare `~/.pki/nssdb` dall'account amministratore se Chrome verrà utilizzato da un altro utente.
+
+---
+
 ## 1. Installa i componenti necessari
 
 ```bash
@@ -58,7 +69,7 @@ Con una CNS compatibile dovrebbe comparire qualcosa come:
 CNS card
 ```
 
-Questo conferma che lettore, pcscd e OpenSC riescono a comunicare con la carta.
+Questo conferma che lettore, `pcscd` e OpenSC riescono a comunicare con la carta.
 
 ### Test opzionale del PIN tramite PKCS#11
 
@@ -104,7 +115,11 @@ Preferire il modulo `onepin`:
 modutil -dbdir sql:$HOME/.pki/nssdb -add "OpenSC smartcard framework" -libfile /usr/lib/x86_64-linux-gnu/onepin-opensc-pkcs11.so
 ```
 
-Controlla:
+`modutil` può mostrare un avviso chiedendo di chiudere il browser.
+
+Assicurarsi che Chrome sia completamente chiuso e premere **Invio** per continuare.
+
+Controlla quindi la configurazione:
 
 ```bash
 modutil -dbdir sql:$HOME/.pki/nssdb -list
@@ -131,33 +146,58 @@ Sfila e reinserisci la CNS, apri Chrome e prova l'accesso al servizio desiderato
 - OpenSC riesca anche ad arrivare alla richiesta del PIN;
 - ma Chrome non presenti comunque la finestra per il PIN.
 
-Questa situazione è stata riscontrata con alcune CNS/lettori.
+Questa situazione è stata riscontrata con alcune combinazioni di CNS/lettore.
 
 In questo caso può essere necessario utilizzare il middleware **Bit4id** oltre a OpenSC.
 
-## 6. Installazione tramite InfoCert Sign
+---
+
+## 6. Installazione di Bit4id tramite InfoCert Sign
 
 InfoCert Sign per Linux contiene la libreria PKCS#11 Bit4id.
 
-Dopo aver installato InfoCert Sign, verificare la presenza della libreria:
+Dopo aver installato InfoCert Sign, cercare la libreria:
 
 ```bash
 find /opt /usr -type f -iname 'libbit4*pki.so*' 2>/dev/null
 ```
 
-Con una versione recente di InfoCert Sign è stata trovata in:
+Con la versione di InfoCert Sign utilizzata durante i test, la libreria è stata trovata in:
 
 ```text
 /opt/infocert-sign-desktop/resources/app.asar.unpacked/node_modules/@ice/dike-core-linux/native/lib/libbit4xpki.so
 ```
 
+> **Importante:** il percorso può cambiare con versioni o aggiornamenti di InfoCert Sign.
+>
+> Utilizzare nel comando `modutil` il percorso effettivamente restituito da `find`. Il percorso riportato sopra è solamente un esempio reale riscontrato durante i test.
+
 Chiudi completamente Chrome.
 
-Registra quindi Bit4id nel database NSS dell'utente:
+Registra quindi Bit4id nel database NSS dell'utente utilizzando il percorso trovato.
+
+Esempio:
 
 ```bash
 modutil -dbdir sql:$HOME/.pki/nssdb -add "CNS_Bit4id" -libfile /opt/infocert-sign-desktop/resources/app.asar.unpacked/node_modules/@ice/dike-core-linux/native/lib/libbit4xpki.so
 ```
+
+`modutil` mostrerà un avviso simile a:
+
+```text
+WARNING: Performing this operation while the browser is running could cause
+corruption of your security databases.
+```
+
+Assicurarsi che Chrome sia completamente chiuso e premere **Invio** per continuare.
+
+Il messaggio:
+
+```text
+Module "CNS_Bit4id" added to database.
+```
+
+conferma che il modulo è stato registrato.
 
 Controlla:
 
@@ -165,9 +205,14 @@ Controlla:
 modutil -dbdir sql:$HOME/.pki/nssdb -list
 ```
 
-È possibile lasciare registrati contemporaneamente **OpenSC e CNS_Bit4id**.
+È possibile lasciare registrati contemporaneamente:
 
-Riavvia poi pcscd:
+```text
+OpenSC smartcard framework
+CNS_Bit4id
+```
+
+Riavvia quindi `pcscd`:
 
 ```bash
 sudo systemctl restart pcscd
@@ -198,11 +243,17 @@ CNS_Bit4id
 
 tramite `libbit4xpki.so` fornita da InfoCert Sign ha risolto il problema.
 
-**Conclusione:** non installare necessariamente Bit4id su tutte le postazioni. Provare prima OpenSC; se la CNS viene riconosciuta ma Chrome non arriva alla richiesta del PIN, provare Bit4id.
+**Conclusione:** non è necessario installare Bit4id preventivamente su tutte le postazioni.
+
+Provare prima **OpenSC**.
+
+Se la CNS viene correttamente riconosciuta dal sistema ma Chrome non arriva alla richiesta del PIN, provare **Bit4id**.
 
 ---
 
 # Note diagnostiche
+
+## `--list-objects` non mostra certificati
 
 Il comando:
 
@@ -232,7 +283,47 @@ pkcs11-tool --module /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so --login --test
 
 ---
 
-## Ripristino NSS — solo in caso di problemi
+## Chrome non chiede più il PIN dopo un aggiornamento di InfoCert Sign
+
+È possibile che un aggiornamento di InfoCert Sign modifichi il percorso della libreria Bit4id.
+
+Se Chrome smette di chiedere il PIN, verificare nuovamente dove si trova la libreria:
+
+```bash
+find /opt /usr -type f -iname 'libbit4*pki.so*' 2>/dev/null
+```
+
+Controllare anche il modulo attualmente registrato:
+
+```bash
+modutil -dbdir sql:$HOME/.pki/nssdb -list
+```
+
+Se `CNS_Bit4id` punta a un percorso che non esiste più, chiudere completamente Chrome e rimuovere la vecchia registrazione:
+
+```bash
+modutil -dbdir sql:$HOME/.pki/nssdb -delete "CNS_Bit4id"
+```
+
+Quindi registrare nuovamente il modulo utilizzando **il nuovo percorso restituito da `find`**.
+
+Esempio:
+
+```bash
+modutil -dbdir sql:$HOME/.pki/nssdb -add "CNS_Bit4id" -libfile /nuovo/percorso/libbit4xpki.so
+```
+
+Riavviare quindi:
+
+```bash
+sudo systemctl restart pcscd
+```
+
+Sfilare e reinserire la CNS e riaprire Chrome.
+
+---
+
+# Ripristino NSS — solo in caso di problemi
 
 La cancellazione:
 
@@ -240,8 +331,10 @@ La cancellazione:
 rm -rf ~/.pki/nssdb
 ```
 
-**azzera il database NSS dell'utente**.
+**azzera il database NSS dell'utente.**
 
 Non deve quindi essere utilizzata come normale passaggio di installazione.
 
 Usarla soltanto se si vuole deliberatamente ricreare da zero la configurazione NSS dell'utente.
+
+Dopo aver cancellato il database sarà necessario ricrearlo e registrare nuovamente i moduli PKCS#11 necessari.
