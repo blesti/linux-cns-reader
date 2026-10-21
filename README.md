@@ -1,4 +1,4 @@
-# linux-cns-reader
+# linux-cns-reader (Mint)
 
 Script Bash per l'installazione e la configurazione di lettori smart card CNS su Linux
 
